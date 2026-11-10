@@ -1,0 +1,149 @@
+{
+  "metadata": {
+    "ma_mo_hinh": "MH_261109082619_ZSJW0",
+    "ten_mo_hinh": "Mo hinh hien hanh",
+    "ma_cau_hinh": "CH_20261109110425_N19ZFZ",
+    "top_n": 10,
+    "nguong_cosine": 0.1,
+    "so_sinh_vien": 5,
+    "so_sinh_vien_bo_qua_khong_co_tap_tham_chieu": 1,
+    "so_sinh_vien_du_phong_theo_nganh": 1,
+    "phuong_phap_ground_truth": "Lien ket de cuong, loc tai lieu DangSuDung va chua tung muon",
+    "timestamp": "2026-11-09 15:10:37"
+  },
+  "evaluation_notes": "Đánh giá đối chiếu với liên kết tài liệu trong đề cương học phần (tập tham chiếu proxy), không phải nhãn liên quan do người học đánh giá độc lập. K từ 1 đến min(TopN,5).",
+  "metrics_summary": [
+    {
+      "k": "@1",
+      "k_num": 1,
+      "precision": 1.0,
+      "recall": 0.4987,
+      "ndcg": 1.0
+    },
+    {
+      "k": "@2",
+      "k_num": 2,
+      "precision": 0.6,
+      "recall": 0.5141,
+      "ndcg": 0.8453
+    },
+    {
+      "k": "@3",
+      "k_num": 3,
+      "precision": 0.5333,
+      "recall": 0.5628,
+      "ndcg": 0.8346
+    },
+    {
+      "k": "@4",
+      "k_num": 4,
+      "precision": 0.4,
+      "recall": 0.5628,
+      "ndcg": 0.7616
+    },
+    {
+      "k": "@5",
+      "k_num": 5,
+      "precision": 0.4,
+      "recall": 0.6462,
+      "ndcg": 0.7808
+    }
+  ],
+  "detailed_results": [
+    {
+      "mssv": "030238000001",
+      "nguon_goi_y": "HocPhanCaNhan",
+      "ground_truth": [
+        "HUB_3977",
+        "HUB_40441",
+        "HUB_48903",
+        "HUB_49042",
+        "HUB_53049",
+        "HUB_53054",
+        "HUB_53075",
+        "HUB_53076",
+        "HUB_54279",
+        "HUB_68957",
+        "HUB_70905",
+        "HUB_71528",
+        "HUB_73153"
+      ],
+      "predictions": [
+        "HUB_40441",
+        "HUB_68957",
+        "HUB_70905",
+        "HUB_50736",
+        "HUB_71382",
+        "HUB_53052",
+        "HUB_68956",
+        "HUB_53054",
+        "HUB_71383",
+        "HUB_53076"
+      ]
+    },
+    {
+      "mssv": "030239230205",
+      "nguon_goi_y": "TheoNganh",
+      "ground_truth": [
+        "HUB_71504"
+      ],
+      "predictions": [
+        "HUB_71504"
+      ]
+    },
+    {
+      "mssv": "030835000002",
+      "nguon_goi_y": "HocPhanCaNhan",
+      "ground_truth": [
+        "HUB_3977",
+        "HUB_53049",
+        "HUB_53629",
+        "HUB_70905",
+        "HUB_71528",
+        "HUB_73153"
+      ],
+      "predictions": [
+        "HUB_70905",
+        "HUB_7310",
+        "HUB_71528",
+        "HUB_48492",
+        "HUB_53629",
+        "HUB_70341"
+      ]
+    },
+    {
+      "mssv": "073101000005",
+      "nguon_goi_y": "HocPhanCaNhan",
+      "ground_truth": [
+        "HUB_49014"
+      ],
+      "predictions": [
+        "HUB_49014",
+        "HUB_71466",
+        "HUB_43246"
+      ]
+    },
+    {
+      "mssv": "073403000004",
+      "nguon_goi_y": "HocPhanCaNhan",
+      "ground_truth": [
+        "HUB_53054",
+        "HUB_53075",
+        "HUB_53076",
+        "HUB_53078"
+      ],
+      "predictions": [
+        "HUB_53078",
+        "HUB_50736",
+        "HUB_71382",
+        "HUB_53052",
+        "HUB_53054",
+        "HUB_71383",
+        "HUB_53076",
+        "HUB_71381",
+        "HUB_52092",
+        "HUB_71456"
+      ]
+    }
+  ]
+}
