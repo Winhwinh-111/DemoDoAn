@@ -10,7 +10,6 @@ use App\Models\HocPhan;
 use App\Models\NganhHoc;
 use App\Models\MuonTra;
 use App\Models\TaiLieu;
-use App\Services\NlpTokenizerService;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
@@ -155,7 +154,8 @@ class AdminSystemController extends Controller
                 return false;
             };
 
-            $countSuccess = 0;
+            $countInserted = 0;
+            $countUpdated = 0;
             $countSkipped = 0;
             $errors = [];
             $processedKeys = [];
@@ -177,12 +177,17 @@ class AdminSystemController extends Controller
                         $errors[] = "Dòng {$lineNum}: Mã ngành hoặc tên ngành vượt độ dài cho phép.";
                         continue;
                     }
-                    if (NganhHoc::where('MaNganh', $maNganh)->exists()) { $countSkipped++; $errors[] = "Dòng {$lineNum}: Mã ngành [{$maNganh}] đã tồn tại."; continue; }
                     if (in_array($maNganh, $processedKeys, true)) { $countSkipped++; $errors[] = "Dòng {$lineNum}: Mã ngành [{$maNganh}] bị trùng trong tệp."; continue; }
 
-                    NganhHoc::create(['MaNganh' => $maNganh, 'TenNganh' => $tenNganh]);
+                    $nganh = NganhHoc::find($maNganh);
+                    if ($nganh) {
+                        $nganh->update(['TenNganh' => $tenNganh]);
+                        $countUpdated++;
+                    } else {
+                        NganhHoc::create(['MaNganh' => $maNganh, 'TenNganh' => $tenNganh]);
+                        $countInserted++;
+                    }
                     $processedKeys[] = $maNganh;
-                    $countSuccess++;
                 }
 
                 /* 2. HỌC PHẦN */
@@ -198,8 +203,10 @@ class AdminSystemController extends Controller
                         $errors[] = "Dòng {$lineNum}: Mã học phần hoặc tên học phần vượt độ dài cho phép.";
                         continue;
                     }
-                    if (HocPhan::where('MaHocPhan', $maHocPhan)->exists()) { $countSkipped++; $errors[] = "Dòng {$lineNum}: Mã học phần [{$maHocPhan}] đã tồn tại."; continue; }
                     if (in_array($maHocPhan, $processedKeys, true)) { $countSkipped++; $errors[] = "Dòng {$lineNum}: Mã học phần [{$maHocPhan}] bị trùng trong tệp."; continue; }
+                    if (!$validLength($moTa, 65535)) {
+                        $countSkipped++; $errors[] = "Dòng {$lineNum}: Mô tả học phần vượt độ dài cho phép."; continue;
+                    }
 
                     $soTinChi = null;
                     if ($stcValue !== null) {
@@ -211,14 +218,23 @@ class AdminSystemController extends Controller
                         }
                     }
 
-                    HocPhan::create([
-                        'MaHocPhan' => $maHocPhan,
-                        'TenHocPhan' => $tenHocPhan,
-                        'SoTinChi' => $soTinChi,
-                        'MoTa' => $moTa
-                    ]);
+                    $hocPhan = HocPhan::find($maHocPhan);
+                    if ($hocPhan) {
+                        $updates = ['TenHocPhan' => $tenHocPhan];
+                        if ($stcIdx !== null && $stcValue !== null) $updates['SoTinChi'] = $soTinChi;
+                        if ($moTaIdx !== null && $moTa !== null) $updates['MoTa'] = $moTa;
+                        $hocPhan->update($updates);
+                        $countUpdated++;
+                    } else {
+                        HocPhan::create([
+                            'MaHocPhan' => $maHocPhan,
+                            'TenHocPhan' => $tenHocPhan,
+                            'SoTinChi' => $soTinChi,
+                            'MoTa' => $moTa
+                        ]);
+                        $countInserted++;
+                    }
                     $processedKeys[] = $maHocPhan;
-                    $countSuccess++;
                 }
 
                 /* 3. ĐỀ CƯƠNG HỌC PHẦN */
@@ -238,8 +254,13 @@ class AdminSystemController extends Controller
                     if (!TaiLieu::where('MaTaiLieu', $maTaiLieu)->exists()) { $countSkipped++; $errors[] = "Dòng {$lineNum}: Tài liệu [{$maTaiLieu}] chưa tồn tại."; continue; }
 
                     $key = $maHocPhan . '|' . $maTaiLieu;
-                    if (DB::table('DeCuongHocPhan')->where('MaHocPhan', $maHocPhan)->where('MaTaiLieu', $maTaiLieu)->exists() || in_array($key, $processedKeys, true)) {
-                        $countSkipped++; $errors[] = "Dòng {$lineNum}: Cặp học phần [{$maHocPhan}] - tài liệu [{$maTaiLieu}] đã tồn tại trong đề cương."; continue;
+                    if (in_array($key, $processedKeys, true)) {
+                        $countSkipped++; $errors[] = "Dòng {$lineNum}: Cặp học phần [{$maHocPhan}] - tài liệu [{$maTaiLieu}] bị trùng trong tệp."; continue;
+                    }
+                    $queryDeCuong = DB::table('DeCuongHocPhan')->where('MaHocPhan', $maHocPhan)->where('MaTaiLieu', $maTaiLieu);
+                    $soBanGhiDeCuong = (clone $queryDeCuong)->count();
+                    if ($soBanGhiDeCuong > 1) {
+                        $countSkipped++; $errors[] = "Dòng {$lineNum}: Cặp đề cương có nhiều bản ghi trong CSDL, không thể cập nhật an toàn."; continue;
                     }
 
                     $normalizedLoai = mb_strtolower(trim((string) ($rawLoaiTl ?? '')), 'UTF-8');            
@@ -265,12 +286,19 @@ class AdminSystemController extends Controller
                             continue;
                         }
                     }
-                    DB::table('DeCuongHocPhan')->insert([
-                        'MaHocPhan' => $maHocPhan, 'MaTaiLieu' => $maTaiLieu,
-                        'NoiDungDeCuong' => $noiDung, 'LoaiTaiLieu' => $loaiTaiLieu
-                    ]);
+                    if ($soBanGhiDeCuong === 1) {
+                        $updates = ['NoiDungDeCuong' => $noiDung];
+                        if ($rawLoaiTl !== null) $updates['LoaiTaiLieu'] = $loaiTaiLieu;
+                        $queryDeCuong->update($updates);
+                        $countUpdated++;
+                    } else {
+                        DB::table('DeCuongHocPhan')->insert([
+                            'MaHocPhan' => $maHocPhan, 'MaTaiLieu' => $maTaiLieu,
+                            'NoiDungDeCuong' => $noiDung, 'LoaiTaiLieu' => $loaiTaiLieu
+                        ]);
+                        $countInserted++;
+                    }
                     $processedKeys[] = $key;
-                    $countSuccess++;
                 }
 
                 /* 4. CHƯƠNG TRÌNH ĐÀO TẠO */
@@ -293,7 +321,7 @@ class AdminSystemController extends Controller
 
                     DB::table('ChuongTrinhDaoTao')->insert(['MaNganh' => $maNganh, 'MaHocPhan' => $maHocPhan]);
                     $processedKeys[] = $key;
-                    $countSuccess++;
+                    $countInserted++;
                 }
 
                 /* 5. HỒ SƠ SINH VIÊN */
@@ -309,9 +337,10 @@ class AdminSystemController extends Controller
                         $errors[] = "Dòng {$lineNum}: Thông tin sinh viên vượt độ dài cho phép.";
                         continue;
                     }
-                    if (SinhVien::where('MSSV', $mssv)->exists() || in_array($mssv, $processedKeys, true)) {
-                        $countSkipped++; $errors[] = "Dòng {$lineNum}: MSSV [{$mssv}] đã tồn tại."; continue;
+                    if (in_array($mssv, $processedKeys, true)) {
+                        $countSkipped++; $errors[] = "Dòng {$lineNum}: MSSV [{$mssv}] bị trùng trong tệp."; continue;
                     }
+                    $sinhVienHienCo = SinhVien::find($mssv);
 
                     if (empty($maNganh) || !NganhHoc::where('MaNganh', $maNganh)->exists()) {
                         $countSkipped++; $errors[] = "Dòng {$lineNum}: Mã ngành [{$maNganh}] không tồn tại hoặc bị trống."; continue;
@@ -339,7 +368,12 @@ class AdminSystemController extends Controller
                         continue;
                     }
 
-                    if (SinhVien::where('MaTaiKhoan', $maTk)->exists()) {
+                    if ($sinhVienHienCo && $sinhVienHienCo->MaTaiKhoan !== $maTk) {
+                        $countSkipped++;
+                        $errors[] = "Dòng {$lineNum}: Không cho phép đổi mã tài khoản đã liên kết với MSSV [{$mssv}] qua tệp nhập.";
+                        continue;
+                    }
+                    if (SinhVien::where('MaTaiKhoan', $maTk)->where('MSSV', '<>', $mssv)->exists()) {
                         $countSkipped++;
                         $errors[] = "Dòng {$lineNum}: Tài khoản [{$maTk}] đã được liên kết với sinh viên khác.";
                         continue;
@@ -365,14 +399,24 @@ class AdminSystemController extends Controller
                         $countSkipped++; $errors[] = "Dòng {$lineNum}: Số điện thoại không hợp lệ."; continue;
                     }
 
-                    SinhVien::create([
-                        'MSSV' => $mssv, 'HoTen' => $hoTen, 'NgaySinh' => $ngaySinh,
-                        'GioiTinh' => $gioiTinh, 'SoDienThoai' => $sdt,
-                        'HanThe' => $hanThe, 'MaNganh' => $maNganh,
-                        'MaTaiKhoan' => $maTk
-                    ]);
+                    if ($sinhVienHienCo) {
+                        $updates = ['HoTen' => $hoTen, 'MaNganh' => $maNganh];
+                        if ($ngaySinhValue !== null) $updates['NgaySinh'] = $ngaySinh;
+                        if ($hanTheValue !== null) $updates['HanThe'] = $hanThe;
+                        if ($gioiTinhIdx !== null && $getCell($data, $gioiTinhIdx) !== null) $updates['GioiTinh'] = $gioiTinh;
+                        if ($sdt !== null) $updates['SoDienThoai'] = $sdt;
+                        $sinhVienHienCo->update($updates);
+                        $countUpdated++;
+                    } else {
+                        SinhVien::create([
+                            'MSSV' => $mssv, 'HoTen' => $hoTen, 'NgaySinh' => $ngaySinh,
+                            'GioiTinh' => $gioiTinh, 'SoDienThoai' => $sdt,
+                            'HanThe' => $hanThe, 'MaNganh' => $maNganh,
+                            'MaTaiKhoan' => $maTk
+                        ]);
+                        $countInserted++;
+                    }
                     $processedKeys[] = $mssv;
-                    $countSuccess++;
                 }
 
                 /* 6. SINH VIÊN - HỌC PHẦN */
@@ -390,8 +434,13 @@ class AdminSystemController extends Controller
                     if (!HocPhan::where('MaHocPhan', $maHocPhan)->exists()) { $countSkipped++; $errors[] = "Dòng {$lineNum}: Học phần [{$maHocPhan}] chưa tồn tại."; continue; }
 
                     $key = $mssv . '|' . $maHocPhan;
-                    if (DB::table('SinhVienHocPhan')->where('MSSV', $mssv)->where('MaHocPhan', $maHocPhan)->exists() || in_array($key, $processedKeys, true)) {
-                        $countSkipped++; $errors[] = "Dòng {$lineNum}: Cặp sinh viên - học phần đã tồn tại."; continue;
+                    if (in_array($key, $processedKeys, true)) {
+                        $countSkipped++; $errors[] = "Dòng {$lineNum}: Cặp sinh viên - học phần bị trùng trong tệp."; continue;
+                    }
+                    $querySinhVienHocPhan = DB::table('SinhVienHocPhan')->where('MSSV', $mssv)->where('MaHocPhan', $maHocPhan);
+                    $soBanGhiSinhVienHocPhan = (clone $querySinhVienHocPhan)->count();
+                    if ($soBanGhiSinhVienHocPhan > 1) {
+                        $countSkipped++; $errors[] = "Dòng {$lineNum}: Cặp sinh viên - học phần có nhiều bản ghi trong CSDL, không thể cập nhật an toàn."; continue;
                     }
 
                     $rawTrangThai = mb_strtolower(trim((string) ($getCell($data, $trangThaiIdx) ?? 'đang học')), 'UTF-8');
@@ -400,13 +449,23 @@ class AdminSystemController extends Controller
 
                     if ($trangThai === null) { $countSkipped++; $errors[] = "Dòng {$lineNum}: Trạng thái học phần không hợp lệ."; continue; }
 
-                    DB::table('SinhVienHocPhan')->insert(['MSSV' => $mssv, 'MaHocPhan' => $maHocPhan, 'TrangThai' => $trangThai]);
+                    if ($soBanGhiSinhVienHocPhan === 1) {
+                        if ($trangThaiIdx === null || $getCell($data, $trangThaiIdx) === null) {
+                            $countSkipped++;
+                            $errors[] = "Dòng {$lineNum}: Thiếu trạng thái để cập nhật cặp sinh viên - học phần đã có.";
+                            continue;
+                        }
+                        $querySinhVienHocPhan->update(['TrangThai' => $trangThai]);
+                        $countUpdated++;
+                    } else {
+                        DB::table('SinhVienHocPhan')->insert(['MSSV' => $mssv, 'MaHocPhan' => $maHocPhan, 'TrangThai' => $trangThai]);
+                        $countInserted++;
+                    }
                     $processedKeys[] = $key;
-                    $countSuccess++;
                 }
             }
 
-            if ($countSuccess === 0) {
+            if ($countInserted + $countUpdated === 0) {
                 DB::rollBack();
                 $errorDetails = implode(' | ', array_slice($errors, 0, 8));
                 return redirect()->back()->with('error', 'Không có bản ghi hợp lệ để nhập. ' . ($errorDetails ?: 'Vui lòng kiểm tra lại dữ liệu trong tệp.'));
@@ -415,10 +474,10 @@ class AdminSystemController extends Controller
             DB::commit();
             try { Cache::forget('app_latest_config'); } catch (\Throwable $e) {}
 
-            $message = "Nhập dữ liệu hoàn tất! Thành công: {$countSuccess} bản ghi.";
+            $message = "Nhập dữ liệu hoàn tất! Thêm mới: {$countInserted}; Cập nhật: {$countUpdated}; Bỏ qua: {$countSkipped}.";
             if ($countSkipped > 0) {
                 $errorDetails = implode(' | ', array_slice($errors, 0, 5));
-                $message .= " Bỏ qua {$countSkipped} dòng lỗi hoặc trùng. Chi tiết: {$errorDetails}";
+                $message .= " Chi tiết các dòng bỏ qua: {$errorDetails}";
             }
 
             return redirect()->back()->with('success', $message);
